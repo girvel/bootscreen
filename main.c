@@ -117,7 +117,7 @@ int main(void)
     int font_size_small = 16;
     int text_w = MeasureText(text, font_size);
 
-    float start_r = text_w / 2;
+    float start_r = text_w / 2 + 10;
     float max_r = sqrtf(SCREEN_H * SCREEN_H + SCREEN_W * SCREEN_W) / 2;
     float acceleration = 2 * (max_r - start_r) / EXPECTED_TIME / EXPECTED_TIME;
 
