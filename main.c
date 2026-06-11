@@ -6,6 +6,7 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <string.h>
+#include <signal.h>
 
 #ifndef SCREEN_W
 #define SCREEN_W 1366
@@ -18,12 +19,22 @@
 static const struct timespec tenth = {.tv_nsec = 100000000L};
 static const int max_attempts_n = 300;
 static const char *card = "/dev/dri/card0";
+static const float drawing_timeout = 30;
+
+volatile sig_atomic_t sigterm_received = 0;
+
+void handle_sigterm(int sig) {
+    (void)sig;
+    sigterm_received = 1;
+}
 
 // TODO any keypress => new circle of the opposite color
 // TODO raylib logs should be prefixed with Bootscreen:
 
 int main(void)
 {
+    signal(SIGTERM, handle_sigterm);
+    setvbuf(stdout, NULL, _IONBF, 0);
     printf("Bootscreen: Started\n");
 
     int attempt_n = 0;
@@ -45,6 +56,7 @@ int main(void)
     }
 
     for (attempt_n = 0; attempt_n < max_attempts_n; attempt_n++) {
+        rewinddir(drm_dir);
         struct dirent *de;
         while ((de = readdir(drm_dir))) {
             char path_buf[300];
@@ -54,6 +66,11 @@ int main(void)
 
             char content_buf[16];
             int read_n = read(fd, content_buf, sizeof(content_buf) - 1);
+            if (read_n <= 0) {
+                close(fd);
+                continue;
+            }
+
             if (content_buf[read_n - 1] == '\n') {
                 content_buf[read_n - 1] = '\0';
             } else {
@@ -80,13 +97,13 @@ connected:
     InitWindow(SCREEN_W, SCREEN_H, "Boot screen");
     SetTargetFPS(30);
     HideCursor();
-    SetExitKey(KEY_NULL);
 
     const char *text = "Entering the Void...";
     int font_size = 30;
     int text_w = MeasureText(text, font_size);
 
-    int circle_r = text_w / 2;
+    float circle_r = text_w / 2;
+    float time_counter = 0;
 
     printf("Bootscreen: Enter main loop\n");
     while (1) {
@@ -95,8 +112,13 @@ connected:
             break;
         }
 
-        if (access("/run/stop-bootscreen", F_OK) == 0) {
-            printf("Bootscreen: Closed via /run/stop-bootscreen\n");
+        if (sigterm_received) {
+            printf("Bootscreen: Closed via SIGTERM\n");
+            break;
+        }
+
+        if (time_counter > drawing_timeout) {
+            printf("Bootscreen: Timeout\n");
             break;
         }
 
@@ -113,6 +135,8 @@ connected:
                      font_size, RAYWHITE);
             circle_r += GetTime() * 5;
         EndDrawing();
+
+        time_counter += GetFrameTime();
     }
     CloseWindow();
     return 0;
