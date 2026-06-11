@@ -1,3 +1,5 @@
 #!/usr/bin/sh
 cc main.c -o bootscreen \
-    -Wall -Wextra -I./include -L./lib -l:libraylib_drm.a -lm -ldrm -lgbm -lEGL -lGLESv2 -pthread
+    -Wall -Wextra \
+    -I./include -L./lib \
+    -l:libraylib_drm.a -lm -ldrm -lgbm -lEGL -lGLESv2 -pthread \

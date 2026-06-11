@@ -27,17 +27,31 @@ static const int max_attempts_n = 300;
 static const float drawing_timeout = 90;
 static const struct timespec tenth = {.tv_nsec = 100000000L};
 
-static const char *shader_source = 
-    "#version 100\n"
-    "precision mediump float;\n"
-    "varying vec2 fragTexCoord;\n"
-    "varying vec4 fragColor;\n"
-    "uniform sampler2D texture0;\n"
-    "void main() {\n"
-    "    vec4 color = texture2D(texture0, fragTexCoord);\n"
-    "    if (color.a < 0.1) discard;\n"
-    "    gl_FragColor = color;\n"
-    "}\n";
+__asm__(
+    ".section .rodata\n"
+    ".global normal_shader_source\n"
+    "normal_shader_source:\n"
+    ".incbin \"normal.frag\"\n"
+    ".byte 0\n"
+);
+
+extern const char normal_shader_source[];
+
+// static const char *circle_shader_source = 
+//     "#version 100\n"
+//     "precision mediump float;\n"
+//     "varying vec2 fragTexCoord;\n"
+//     "varying vec4 fragColor;\n"
+//     "uniform sampler2D texture0;\n"
+//     "void main() {\n"
+//     "    vec4 color = vec4(1);\n"
+//     "    if (color.a < 0.1) discard;\n"
+//     "    vec2 pos = fragTexCoord * vec2("#SCREEN_W", "#SCREEN_H");\n"
+//     "    for (int i = 0; i < 10; i++) {\n"
+//     "        \n"
+//     "    }\n"
+//     "    gl_FragColor = color;\n"
+//     "}\n";
 
 volatile sig_atomic_t sigterm_received = 0;
 
@@ -131,7 +145,7 @@ int main(void)
     SetTargetFPS(30);
     HideCursor();
 
-    Shader shader = LoadShaderFromMemory(NULL, shader_source);
+    Shader normal_shader = LoadShaderFromMemory(NULL, normal_shader_source);
     rlSetBlendFactors(RL_ONE_MINUS_DST_COLOR, RL_ZERO, RL_FUNC_ADD);
 
     const char *upper_text = "Entering the Void...";
@@ -146,7 +160,7 @@ int main(void)
     Circle circles[100] = {
         {.x = SCREEN_W/2, .y = SCREEN_H/2},
     };
-    int circles_n = 1;
+    size_t circles_n = 1;
 
     printf("Bootscreen: Enter main loop\n");
     while (1) {
@@ -180,7 +194,7 @@ int main(void)
             ClearBackground(WHITE);
 
             BeginBlendMode(BLEND_CUSTOM);
-            BeginShaderMode(shader);
+            BeginShaderMode(normal_shader);
                 for (Circle *c = circles; c < circles + circles_n; c++) {
                     float local_t = t - c->start_time;
                     int circle_r = start_r + acceleration * local_t * local_t / 2;
