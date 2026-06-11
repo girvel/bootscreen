@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <string.h>
 #include <signal.h>
+#include <math.h>
 
 #ifndef SCREEN_W
 #define SCREEN_W 1366
@@ -16,10 +17,14 @@
 #define SCREEN_H 768
 #endif
 
-static const struct timespec tenth = {.tv_nsec = 100000000L};
+#ifndef EXPECTED_TIME
+#define EXPECTED_TIME 30
+#endif
+
 static const int max_attempts_n = 300;
+static const float drawing_timeout = 90;
 static const char *card = "/dev/dri/card0";
-static const float drawing_timeout = 30;
+static const struct timespec tenth = {.tv_nsec = 100000000L};
 
 volatile sig_atomic_t sigterm_received = 0;
 
@@ -100,13 +105,16 @@ connected:
 
     const char *text = "Entering the Void...";
     int font_size = 30;
+    int font_size_small = 16;
     int text_w = MeasureText(text, font_size);
 
-    float circle_r = text_w / 2;
-    float time_counter = 0;
+    float start_r = text_w / 2;
+    float max_r = sqrtf(SCREEN_H * SCREEN_H + SCREEN_W * SCREEN_W) / 2;
+    float acceleration = 2 * (max_r - start_r) / EXPECTED_TIME / EXPECTED_TIME;
 
     printf("Bootscreen: Enter main loop\n");
     while (1) {
+        float t = GetTime();
         if (WindowShouldClose()) {
             printf("Bootscreen: Closed manually\n");
             break;
@@ -117,26 +125,33 @@ connected:
             break;
         }
 
-        if (time_counter > drawing_timeout) {
+        if (t > drawing_timeout) {
             printf("Bootscreen: Timeout\n");
             break;
         }
 
         BeginDrawing();
-            if (circle_r * circle_r * 4 < SCREEN_W * SCREEN_W + SCREEN_H * SCREEN_H) {
+            int circle_r = start_r + acceleration * t * t / 2;
+            if (circle_r < max_r) {
                 ClearBackground(RAYWHITE);
                 DrawCircle(SCREEN_W / 2, SCREEN_H / 2, circle_r, BLACK);
             } else {
                 ClearBackground(BLACK);
             }
+
             DrawText(text,
                      (SCREEN_W - text_w) / 2,
                      (SCREEN_H - font_size) / 2,
                      font_size, RAYWHITE);
-            circle_r += GetTime() * 5;
-        EndDrawing();
 
-        time_counter += GetFrameTime();
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%.1fs", t);
+            int w = MeasureText(buf, font_size_small);
+            DrawText(buf,
+                     (SCREEN_W - w) / 2,
+                     (SCREEN_H - font_size_small) / 2 + 40,
+                     font_size_small, RAYWHITE);
+        EndDrawing();
     }
     CloseWindow();
     return 0;
