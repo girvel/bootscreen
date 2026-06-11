@@ -23,44 +23,42 @@
 
 static const int max_attempts_n = 300;
 static const float drawing_timeout = 90;
-static const char *card = "/dev/dri/card0";
 static const struct timespec tenth = {.tv_nsec = 100000000L};
 
 volatile sig_atomic_t sigterm_received = 0;
 
-void handle_sigterm(int sig) {
+void handle_sigterm(int sig)
+{
     (void)sig;
     sigterm_received = 1;
 }
 
-// TODO any keypress => new circle of the opposite color
-// TODO raylib logs should be prefixed with Bootscreen:
-
-int main(void)
+bool wait_for_gpu()
 {
-    signal(SIGTERM, handle_sigterm);
-    setvbuf(stdout, NULL, _IONBF, 0);
-    printf("Bootscreen: Started\n");
-
+    const char *card = "/dev/dri/card0";
     int attempt_n = 0;
     while (access(card, F_OK) != 0) {
         nanosleep(&tenth, NULL);
         attempt_n++;
         if (attempt_n >= max_attempts_n) {
             printf("Bootscreen: Timeout, %s does not exist\n", card);
-            return 1;
+            return false;
         }
     }
     printf("Bootscreen: %s ready on attempt %d\n", card, attempt_n);
+    return true;
+}
 
+bool wait_for_drm()
+{
     DIR *drm_dir = opendir("/sys/class/drm");
     if (drm_dir == NULL) {
         printf("Bootscreen: Unable to open /sys/class/drm\n");
         perror("");
-        return 1;
+        return false;
     }
 
-    for (attempt_n = 0; attempt_n < max_attempts_n; attempt_n++) {
+    for (int attempt_n = 0; attempt_n < max_attempts_n; attempt_n++) {
         rewinddir(drm_dir);
         struct dirent *de;
         while ((de = readdir(drm_dir))) {
@@ -85,7 +83,8 @@ int main(void)
 
             if (strcmp(content_buf, "connected") == 0) {
                 printf("Bootscreen: %s connected on attempt %d\n", path_buf, attempt_n);
-                goto connected;
+                closedir(drm_dir);
+                return true;
             }
         }
 
@@ -93,12 +92,22 @@ int main(void)
     }
 
     printf("Bootscreen: no drm ready after %d attempts\n", max_attempts_n);
-    return 1;
+    return false;
+}
 
-connected:
-    closedir(drm_dir);
+// TODO any keypress => new circle of the opposite color
+// TODO raylib logs should be prefixed with Bootscreen:
 
+int main(void)
+{
+    setvbuf(stdout, NULL, _IONBF, 0);
+    printf("Bootscreen: Started\n");
+    signal(SIGTERM, handle_sigterm);
     SetTraceLogLevel(LOG_WARNING);
+
+    if (!wait_for_gpu()) return 1;
+    if (!wait_for_drm()) return 1;
+
     InitWindow(SCREEN_W, SCREEN_H, "Boot screen");
     SetTargetFPS(30);
     HideCursor();
