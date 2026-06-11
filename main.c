@@ -9,6 +9,7 @@
 #include <string.h>
 #include <signal.h>
 #include <math.h>
+#include <stdlib.h>
 
 #ifndef SCREEN_W
 #define SCREEN_W 1366
@@ -111,6 +112,11 @@ bool wait_for_drm()
 // TODO any keypress => new circle of the opposite color
 // TODO raylib logs should be prefixed with Bootscreen:
 
+typedef struct {
+    int x, y;
+    float start_time;
+} Circle;
+
 int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -133,9 +139,14 @@ int main(void)
     int lower_font_size = 16;
     int upper_text_w = MeasureText(upper_text, upper_font_size);
 
-    float start_r = upper_text_w / 2 + 10;
+    float start_r = 0;
     float max_r = sqrtf(SCREEN_H * SCREEN_H + SCREEN_W * SCREEN_W) / 2;
     float acceleration = 2 * (max_r - start_r) / EXPECTED_TIME / EXPECTED_TIME;
+
+    Circle circles[100] = {
+        {.x = SCREEN_W/2, .y = SCREEN_H/2},
+    };
+    int circles_n = 1;
 
     printf("Bootscreen: Enter main loop\n");
     while (1) {
@@ -155,31 +166,45 @@ int main(void)
             break;
         }
 
+        while (GetKeyPressed()) {
+            if (circles_n >= sizeof(circles)/sizeof(*circles)) break;
+            circles[circles_n] = (Circle) {
+                .x = rand() % SCREEN_W,
+                .y = rand() % SCREEN_H,
+                .start_time = t,
+            };
+            circles_n++;
+        }
+
         BeginDrawing();
-        BeginBlendMode(BLEND_CUSTOM);
-        BeginShaderMode(shader);
-            int circle_r = start_r + acceleration * t * t / 2;
-            if (circle_r < max_r) {
-                ClearBackground(WHITE);
-                DrawCircle(SCREEN_W / 2, SCREEN_H / 2, circle_r, WHITE);
-            } else {
-                ClearBackground(WHITE);
-            }
+            ClearBackground(WHITE);
 
-            DrawText(upper_text,
-                     (SCREEN_W - upper_text_w) / 2,
-                     (SCREEN_H - upper_font_size) / 2,
-                     upper_font_size, WHITE);
+            BeginBlendMode(BLEND_CUSTOM);
+            BeginShaderMode(shader);
+                for (Circle *c = circles; c < circles + circles_n; c++) {
+                    float local_t = t - c->start_time;
+                    int circle_r = start_r + acceleration * local_t * local_t / 2;
+                    if (circle_r < 2 * max_r) {
+                        DrawCircle(c->x, c->y, circle_r, WHITE);
+                    } else {
+                        ClearBackground(WHITE);
+                    }
+                }
 
-            char buf[16];
-            snprintf(buf, sizeof(buf), "%.1fs", t);
-            int lower_text_w = MeasureText(buf, lower_font_size);
-            DrawText(buf,
-                     (SCREEN_W - lower_text_w) / 2,
-                     (SCREEN_H - lower_font_size) / 2 + 40,
-                     lower_font_size, WHITE);
-        EndShaderMode();
-        EndBlendMode();
+                DrawText(upper_text,
+                         (SCREEN_W - upper_text_w) / 2,
+                         (SCREEN_H - upper_font_size) / 2,
+                         upper_font_size, WHITE);
+
+                char buf[16];
+                snprintf(buf, sizeof(buf), "%.1fs", t);
+                int lower_text_w = MeasureText(buf, lower_font_size);
+                DrawText(buf,
+                         (SCREEN_W - lower_text_w) / 2,
+                         (SCREEN_H - lower_font_size) / 2 + 40,
+                         lower_font_size, WHITE);
+            EndShaderMode();
+            EndBlendMode();
         EndDrawing();
     }
     CloseWindow();
