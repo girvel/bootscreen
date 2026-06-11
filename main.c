@@ -1,4 +1,5 @@
 #include <raylib.h>
+#include <rlgl.h>
 #include <stdio.h>
 #include <time.h>
 #include <unistd.h>
@@ -24,6 +25,18 @@
 static const int max_attempts_n = 300;
 static const float drawing_timeout = 90;
 static const struct timespec tenth = {.tv_nsec = 100000000L};
+
+static const char *shader_source = 
+    "#version 100\n"
+    "precision mediump float;\n"
+    "varying vec2 fragTexCoord;\n"
+    "varying vec4 fragColor;\n"
+    "uniform sampler2D texture0;\n"
+    "void main() {\n"
+    "    vec4 color = texture2D(texture0, fragTexCoord);\n"
+    "    if (color.a < 0.1) discard;\n"
+    "    gl_FragColor = color;\n"
+    "}\n";
 
 volatile sig_atomic_t sigterm_received = 0;
 
@@ -112,12 +125,15 @@ int main(void)
     SetTargetFPS(30);
     HideCursor();
 
-    const char *text = "Entering the Void...";
-    int font_size = 30;
-    int font_size_small = 16;
-    int text_w = MeasureText(text, font_size);
+    Shader shader = LoadShaderFromMemory(NULL, shader_source);
+    rlSetBlendFactors(RL_ONE_MINUS_DST_COLOR, RL_ZERO, RL_FUNC_ADD);
 
-    float start_r = text_w / 2 + 10;
+    const char *upper_text = "Entering the Void...";
+    int upper_font_size = 30;
+    int lower_font_size = 16;
+    int upper_text_w = MeasureText(upper_text, upper_font_size);
+
+    float start_r = upper_text_w / 2 + 10;
     float max_r = sqrtf(SCREEN_H * SCREEN_H + SCREEN_W * SCREEN_W) / 2;
     float acceleration = 2 * (max_r - start_r) / EXPECTED_TIME / EXPECTED_TIME;
 
@@ -140,26 +156,30 @@ int main(void)
         }
 
         BeginDrawing();
+        BeginBlendMode(BLEND_CUSTOM);
+        BeginShaderMode(shader);
             int circle_r = start_r + acceleration * t * t / 2;
             if (circle_r < max_r) {
-                ClearBackground(RAYWHITE);
-                DrawCircle(SCREEN_W / 2, SCREEN_H / 2, circle_r, BLACK);
+                ClearBackground(WHITE);
+                DrawCircle(SCREEN_W / 2, SCREEN_H / 2, circle_r, WHITE);
             } else {
-                ClearBackground(BLACK);
+                ClearBackground(WHITE);
             }
 
-            DrawText(text,
-                     (SCREEN_W - text_w) / 2,
-                     (SCREEN_H - font_size) / 2,
-                     font_size, RAYWHITE);
+            DrawText(upper_text,
+                     (SCREEN_W - upper_text_w) / 2,
+                     (SCREEN_H - upper_font_size) / 2,
+                     upper_font_size, WHITE);
 
             char buf[16];
             snprintf(buf, sizeof(buf), "%.1fs", t);
-            int w = MeasureText(buf, font_size_small);
+            int lower_text_w = MeasureText(buf, lower_font_size);
             DrawText(buf,
-                     (SCREEN_W - w) / 2,
-                     (SCREEN_H - font_size_small) / 2 + 40,
-                     font_size_small, RAYWHITE);
+                     (SCREEN_W - lower_text_w) / 2,
+                     (SCREEN_H - lower_font_size) / 2 + 40,
+                     lower_font_size, WHITE);
+        EndShaderMode();
+        EndBlendMode();
         EndDrawing();
     }
     CloseWindow();
