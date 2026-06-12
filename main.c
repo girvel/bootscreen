@@ -50,7 +50,7 @@ EMBED("circle.frag", circle_shader_source);
                        &SET_CONSTANT_value, UNIFORM_TYPE); \
     } while (0);
 
-#define CIRCLES_MAX 100
+#define CIRCLES_MAX 10
 
 volatile sig_atomic_t sigterm_received = 0;
 
@@ -154,8 +154,7 @@ int main(void)
     int circle_shader_ys = GetShaderLocation(circle_shader, "ys");
     int circle_shader_start_times = GetShaderLocation(circle_shader, "start_times");
     int circle_shader_circles_n = GetShaderLocation(circle_shader, "circles_n");
-    SET_CONSTANT(circle_shader, "acceleration",
-                 2 * (max_r - start_r) / EXPECTED_TIME / EXPECTED_TIME, SHADER_UNIFORM_FLOAT);
+    SET_CONSTANT(circle_shader, "acceleration", acceleration, SHADER_UNIFORM_FLOAT);
     SET_CONSTANT(circle_shader, "screen_w", SCREEN_W, SHADER_UNIFORM_INT);
     SET_CONSTANT(circle_shader, "screen_h", SCREEN_H, SHADER_UNIFORM_INT);
 
@@ -166,7 +165,7 @@ int main(void)
 
     int xs[CIRCLES_MAX] = {SCREEN_W/2};
     int ys[CIRCLES_MAX] = {SCREEN_H/2};
-    int start_times[CIRCLES_MAX] = {};
+    float start_times[CIRCLES_MAX] = {};
     size_t circles_n = 1;
 
     SetShaderValueV(circle_shader, circle_shader_xs, xs, SHADER_UNIFORM_INT, CIRCLES_MAX);
