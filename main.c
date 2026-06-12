@@ -25,7 +25,7 @@
 #endif
 
 #ifndef CIRCLES_MAX
-#define CIRCLES_MAX 4
+#define CIRCLES_MAX 8
 #endif
 
 static const int max_attempts_n = 300;
@@ -161,12 +161,10 @@ int main(void)
         printf(circle_shader_source);
         return 1;
     }
-    int circle_shader_t = GetShaderLocation(circle_shader, "t");
     int circle_shader_xs = GetShaderLocation(circle_shader, "xs");
     int circle_shader_ys = GetShaderLocation(circle_shader, "ys");
-    int circle_shader_start_times = GetShaderLocation(circle_shader, "start_times");
+    int circle_shader_rsqs = GetShaderLocation(circle_shader, "rsqs");
     int circle_shader_circles_n = GetShaderLocation(circle_shader, "circles_n");
-    SET_CONSTANT(circle_shader, "acceleration", acceleration, SHADER_UNIFORM_FLOAT);
 
     const char *upper_text = "Entering the Void...";
     int upper_font_size = 30;
@@ -180,8 +178,6 @@ int main(void)
 
     SetShaderValueV(circle_shader, circle_shader_xs, xs, SHADER_UNIFORM_INT, CIRCLES_MAX);
     SetShaderValueV(circle_shader, circle_shader_ys, ys, SHADER_UNIFORM_INT, CIRCLES_MAX);
-    SetShaderValueV(circle_shader, circle_shader_start_times,
-                    start_times, SHADER_UNIFORM_FLOAT, CIRCLES_MAX);
     SetShaderValue(circle_shader, circle_shader_circles_n, &circles_n, SHADER_UNIFORM_INT);
 
     printf("Bootscreen: Enter main loop\n");
@@ -215,17 +211,23 @@ int main(void)
         if (triggers_update) {
             SetShaderValueV(circle_shader, circle_shader_xs, xs, SHADER_UNIFORM_INT, CIRCLES_MAX);
             SetShaderValueV(circle_shader, circle_shader_ys, ys, SHADER_UNIFORM_INT, CIRCLES_MAX);
-            SetShaderValueV(circle_shader, circle_shader_start_times,
-                            start_times, SHADER_UNIFORM_FLOAT, CIRCLES_MAX);
             SetShaderValue(circle_shader, circle_shader_circles_n, &circles_n, SHADER_UNIFORM_INT);
         }
 
         BeginDrawing();
             ClearBackground(WHITE);
-            SetShaderValue(circle_shader, circle_shader_t, &t, SHADER_UNIFORM_FLOAT);
+
+            float rsqs[CIRCLES_MAX];
+            for (size_t i = 0; i < circles_n; i++) {
+                float dt = t - start_times[i];
+                float r = acceleration * dt * dt / 2;
+                rsqs[i] = r * r;
+            }
+            SetShaderValueV(circle_shader, circle_shader_rsqs,
+                            rsqs, SHADER_UNIFORM_FLOAT, CIRCLES_MAX);
+
             BeginShaderMode(circle_shader);
                 DrawRectangle(0, 0, SCREEN_W, SCREEN_H, WHITE);
-                // ClearBackground(WHITE);
             EndShaderMode();
 
             BeginBlendMode(BLEND_CUSTOM);
