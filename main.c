@@ -24,22 +24,31 @@
 #define EXPECTED_TIME 30
 #endif
 
+#ifndef CIRCLES_MAX
+#define CIRCLES_MAX 4
+#endif
+
 static const int max_attempts_n = 300;
 static const float drawing_timeout = 90;
 static const struct timespec tenth = {.tv_nsec = 100000000L};
 
-#define EMBED(PATH, VARNAME) \
+#define EMBED_SHADER_IMPL(PATH, VARNAME, CIRCLES_MAX) \
     __asm__( \
         ".section .rodata\n" \
         ".global "#VARNAME"\n" \
         #VARNAME":\n" \
+        ".ascii \"#version 100\\n\"\n" \
+        ".ascii \"#define CIRCLES_MAX "#CIRCLES_MAX"\\n\"\n" \
         ".incbin \""PATH"\"\n" \
         ".byte 0\n" \
     ); \
     extern const char VARNAME[];
 
-EMBED("normal.frag", normal_shader_source);
-EMBED("circle.frag", circle_shader_source);
+#define EMBED_SHADER_1(PATH, VARNAME, CIRCLES_MAX) EMBED_SHADER_IMPL(PATH, VARNAME, CIRCLES_MAX);
+#define EMBED_SHADER(PATH, VARNAME) EMBED_SHADER_1(PATH, VARNAME, CIRCLES_MAX);
+
+EMBED_SHADER("normal.frag", normal_shader_source);
+EMBED_SHADER("circle.frag", circle_shader_source);
 
 #define SET_CONSTANT(SHADER, IDENTIFIER, VALUE, UNIFORM_TYPE) \
     do { \
@@ -49,8 +58,6 @@ EMBED("circle.frag", circle_shader_source);
                        GetShaderLocation(SET_CONSTANT_shader, IDENTIFIER), \
                        &SET_CONSTANT_value, UNIFORM_TYPE); \
     } while (0);
-
-#define CIRCLES_MAX 10
 
 volatile sig_atomic_t sigterm_received = 0;
 
@@ -135,6 +142,7 @@ int main(void)
     if (!wait_for_gpu()) return 1;
     if (!wait_for_drm()) return 1;
 
+    // SetConfigFlags(FLAG_VSYNC_HINT);
     InitWindow(SCREEN_W, SCREEN_H, "Boot screen");
     SetTargetFPS(30);
     HideCursor();
@@ -148,15 +156,17 @@ int main(void)
     rlSetBlendFactors(RL_ONE_MINUS_DST_COLOR, RL_ZERO, RL_FUNC_ADD);
 
     Shader circle_shader = LoadShaderFromMemory(NULL, circle_shader_source);
-    assert(IsShaderValid(circle_shader));
+    if (!IsShaderValid(circle_shader)) {
+        printf("INVALID CIRCLE SHADER:\n");
+        printf(circle_shader_source);
+        return 1;
+    }
     int circle_shader_t = GetShaderLocation(circle_shader, "t");
     int circle_shader_xs = GetShaderLocation(circle_shader, "xs");
     int circle_shader_ys = GetShaderLocation(circle_shader, "ys");
     int circle_shader_start_times = GetShaderLocation(circle_shader, "start_times");
     int circle_shader_circles_n = GetShaderLocation(circle_shader, "circles_n");
     SET_CONSTANT(circle_shader, "acceleration", acceleration, SHADER_UNIFORM_FLOAT);
-    SET_CONSTANT(circle_shader, "screen_w", SCREEN_W, SHADER_UNIFORM_INT);
-    SET_CONSTANT(circle_shader, "screen_h", SCREEN_H, SHADER_UNIFORM_INT);
 
     const char *upper_text = "Entering the Void...";
     int upper_font_size = 30;
