@@ -10,6 +10,7 @@
 #include <signal.h>
 #include <math.h>
 #include <stdlib.h>
+#include <assert.h>
 
 #ifndef SCREEN_W
 #define SCREEN_W 1366
@@ -27,31 +28,29 @@ static const int max_attempts_n = 300;
 static const float drawing_timeout = 90;
 static const struct timespec tenth = {.tv_nsec = 100000000L};
 
-__asm__(
-    ".section .rodata\n"
-    ".global normal_shader_source\n"
-    "normal_shader_source:\n"
-    ".incbin \"normal.frag\"\n"
-    ".byte 0\n"
-);
+#define EMBED(PATH, VARNAME) \
+    __asm__( \
+        ".section .rodata\n" \
+        ".global "#VARNAME"\n" \
+        #VARNAME":\n" \
+        ".incbin \""PATH"\"\n" \
+        ".byte 0\n" \
+    ); \
+    extern const char VARNAME[];
 
-extern const char normal_shader_source[];
+EMBED("normal.frag", normal_shader_source);
+EMBED("circle.frag", circle_shader_source);
 
-// static const char *circle_shader_source = 
-//     "#version 100\n"
-//     "precision mediump float;\n"
-//     "varying vec2 fragTexCoord;\n"
-//     "varying vec4 fragColor;\n"
-//     "uniform sampler2D texture0;\n"
-//     "void main() {\n"
-//     "    vec4 color = vec4(1);\n"
-//     "    if (color.a < 0.1) discard;\n"
-//     "    vec2 pos = fragTexCoord * vec2("#SCREEN_W", "#SCREEN_H");\n"
-//     "    for (int i = 0; i < 10; i++) {\n"
-//     "        \n"
-//     "    }\n"
-//     "    gl_FragColor = color;\n"
-//     "}\n";
+#define SET_CONSTANT(SHADER, IDENTIFIER, VALUE, UNIFORM_TYPE) \
+    do { \
+        __typeof__((VALUE)) SET_CONSTANT_value = (VALUE); \
+        __typeof__((SHADER)) SET_CONSTANT_shader = (SHADER); \
+        SetShaderValue(SET_CONSTANT_shader, \
+                       GetShaderLocation(SET_CONSTANT_shader, IDENTIFIER), \
+                       &SET_CONSTANT_value, UNIFORM_TYPE); \
+    } while (0);
+
+#define CIRCLES_MAX 100
 
 volatile sig_atomic_t sigterm_received = 0;
 
@@ -126,11 +125,6 @@ bool wait_for_drm()
 // TODO any keypress => new circle of the opposite color
 // TODO raylib logs should be prefixed with Bootscreen:
 
-typedef struct {
-    int x, y;
-    float start_time;
-} Circle;
-
 int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -145,22 +139,41 @@ int main(void)
     SetTargetFPS(30);
     HideCursor();
 
+    float start_r = 0;
+    float max_r = sqrtf(SCREEN_H * SCREEN_H + SCREEN_W * SCREEN_W) / 2;
+    float acceleration = 2 * (max_r - start_r) / EXPECTED_TIME / EXPECTED_TIME;
+
     Shader normal_shader = LoadShaderFromMemory(NULL, normal_shader_source);
+    assert(IsShaderValid(normal_shader));
     rlSetBlendFactors(RL_ONE_MINUS_DST_COLOR, RL_ZERO, RL_FUNC_ADD);
+
+    Shader circle_shader = LoadShaderFromMemory(NULL, circle_shader_source);
+    assert(IsShaderValid(circle_shader));
+    int circle_shader_t = GetShaderLocation(circle_shader, "t");
+    int circle_shader_xs = GetShaderLocation(circle_shader, "xs");
+    int circle_shader_ys = GetShaderLocation(circle_shader, "ys");
+    int circle_shader_start_times = GetShaderLocation(circle_shader, "start_times");
+    int circle_shader_circles_n = GetShaderLocation(circle_shader, "circles_n");
+    SET_CONSTANT(circle_shader, "acceleration",
+                 2 * (max_r - start_r) / EXPECTED_TIME / EXPECTED_TIME, SHADER_UNIFORM_FLOAT);
+    SET_CONSTANT(circle_shader, "screen_w", SCREEN_W, SHADER_UNIFORM_INT);
+    SET_CONSTANT(circle_shader, "screen_h", SCREEN_H, SHADER_UNIFORM_INT);
 
     const char *upper_text = "Entering the Void...";
     int upper_font_size = 30;
     int lower_font_size = 16;
     int upper_text_w = MeasureText(upper_text, upper_font_size);
 
-    float start_r = 0;
-    float max_r = sqrtf(SCREEN_H * SCREEN_H + SCREEN_W * SCREEN_W) / 2;
-    float acceleration = 2 * (max_r - start_r) / EXPECTED_TIME / EXPECTED_TIME;
-
-    Circle circles[100] = {
-        {.x = SCREEN_W/2, .y = SCREEN_H/2},
-    };
+    int xs[CIRCLES_MAX] = {SCREEN_W/2};
+    int ys[CIRCLES_MAX] = {SCREEN_H/2};
+    int start_times[CIRCLES_MAX] = {};
     size_t circles_n = 1;
+
+    SetShaderValueV(circle_shader, circle_shader_xs, xs, SHADER_UNIFORM_INT, CIRCLES_MAX);
+    SetShaderValueV(circle_shader, circle_shader_ys, ys, SHADER_UNIFORM_INT, CIRCLES_MAX);
+    SetShaderValueV(circle_shader, circle_shader_start_times,
+                    start_times, SHADER_UNIFORM_FLOAT, CIRCLES_MAX);
+    SetShaderValue(circle_shader, circle_shader_circles_n, &circles_n, SHADER_UNIFORM_INT);
 
     printf("Bootscreen: Enter main loop\n");
     while (1) {
@@ -180,44 +193,47 @@ int main(void)
             break;
         }
 
+        bool triggers_update = false;
         while (GetKeyPressed()) {
-            if (circles_n >= sizeof(circles)/sizeof(*circles)) break;
-            circles[circles_n] = (Circle) {
-                .x = rand() % SCREEN_W,
-                .y = rand() % SCREEN_H,
-                .start_time = t,
-            };
+            if (circles_n >= CIRCLES_MAX) break;
+            xs[circles_n] = rand() % SCREEN_W;
+            ys[circles_n] = rand() % SCREEN_H;
+            start_times[circles_n] = t;
             circles_n++;
+            triggers_update = true;
+        }
+
+        if (triggers_update) {
+            SetShaderValueV(circle_shader, circle_shader_xs, xs, SHADER_UNIFORM_INT, CIRCLES_MAX);
+            SetShaderValueV(circle_shader, circle_shader_ys, ys, SHADER_UNIFORM_INT, CIRCLES_MAX);
+            SetShaderValueV(circle_shader, circle_shader_start_times,
+                            start_times, SHADER_UNIFORM_FLOAT, CIRCLES_MAX);
+            SetShaderValue(circle_shader, circle_shader_circles_n, &circles_n, SHADER_UNIFORM_INT);
         }
 
         BeginDrawing();
             ClearBackground(WHITE);
+            SetShaderValue(circle_shader, circle_shader_t, &t, SHADER_UNIFORM_FLOAT);
+            BeginShaderMode(circle_shader);
+                DrawRectangle(0, 0, SCREEN_W, SCREEN_H, WHITE);
+                // ClearBackground(WHITE);
+            EndShaderMode();
 
             BeginBlendMode(BLEND_CUSTOM);
-            BeginShaderMode(normal_shader);
-                for (Circle *c = circles; c < circles + circles_n; c++) {
-                    float local_t = t - c->start_time;
-                    int circle_r = start_r + acceleration * local_t * local_t / 2;
-                    if (circle_r < 2 * max_r) {
-                        DrawCircle(c->x, c->y, circle_r, WHITE);
-                    } else {
-                        ClearBackground(WHITE);
-                    }
-                }
 
-                DrawText(upper_text,
-                         (SCREEN_W - upper_text_w) / 2,
-                         (SCREEN_H - upper_font_size) / 2,
-                         upper_font_size, WHITE);
-
-                char buf[16];
-                snprintf(buf, sizeof(buf), "%.1fs", t);
-                int lower_text_w = MeasureText(buf, lower_font_size);
-                DrawText(buf,
-                         (SCREEN_W - lower_text_w) / 2,
-                         (SCREEN_H - lower_font_size) / 2 + 40,
-                         lower_font_size, WHITE);
-            EndShaderMode();
+                BeginShaderMode(normal_shader);
+                    DrawText(upper_text,
+                             (SCREEN_W - upper_text_w) / 2,
+                             (SCREEN_H - upper_font_size) / 2,
+                             upper_font_size, WHITE);
+                    char buf[16];
+                    snprintf(buf, sizeof(buf), "%.1fs", t);
+                    int lower_text_w = MeasureText(buf, lower_font_size);
+                    DrawText(buf,
+                             (SCREEN_W - lower_text_w) / 2,
+                             (SCREEN_H - lower_font_size) / 2 + 40,
+                             lower_font_size, WHITE);
+                EndShaderMode();
             EndBlendMode();
         EndDrawing();
     }
